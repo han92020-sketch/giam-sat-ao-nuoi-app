@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Giám sát chỉ tiêu ao nuôi</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(console.error);
+    });
+  }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#fff; --muted:#64748b;
+  --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --accent:#2563eb;
+}
+*{box-sizing:border-box}
+body{margin:0; font-family:'Roboto',sans-serif; background:var(--bg); color:#0f172a}
+header{background:var(--panel); text-align:center; padding:14px; font-size:20px; font-weight:700;
+       box-shadow:0 2px 5px rgba(0,0,0,.06)}
+.cards{display:flex; flex-wrap:wrap; gap:16px; padding:16px; justify-content:center}
+.card{background:var(--panel); padding:16px; border-radius:12px; text-align:center;
+      flex:1 1 220px; box-shadow:0 2px 5px rgba(0,0,0,.06)}
+.value{font-size:22px; font-weight:700}
+.muted{color:var(--muted); font-size:12px}
+.pill{display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700;
+      border:1px solid transparent}
+.pill.ok{color:var(--ok); border-color:var(--ok); background:#dcfce7}
+.pill.warn{color:var(--warn); border-color:var(--warn); background:#fef3c7}
+.alert-box{text-align:center; padding:10px; margin:10px 16px; border-radius:8px;
+           background:var(--bad); color:#fff; display:none}
+canvas{background:var(--panel); border-radius:10px; padding:8px; margin-bottom:16px;
+       box-shadow:0 2px 5px rgba(0,0,0,.06)}
+.panel{background:var(--panel); margin:16px; padding:16px; border-radius:12px;
+       box-shadow:0 2px 5px rgba(0,0,0,.06)}
+.grid{display:grid; gap:10px}
+.grid.cols-2{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+input[type=number]{width:120px; padding:8px; border:1px solid #cbd5e1; border-radius:8px}
+button{background:var(--accent); color:#fff; padding:10px 14px; border:none; border-radius:8px;
+       font-weight:700; cursor:pointer}
+</style>
+</head>
+<body>
+
+<header>GIÁM SÁT CHỈ TIÊU AO NUÔI</header>
+
+<div class="panel">
+  <h3>Nhập giá trị đo</h3>
+  <div class="grid cols-2">
+    <div><b>Nhiệt độ (°C)</b><br><input id="inTemp" type="number" step="0.1" value="28"></div>
+    <div><b>pH</b><br><input id="inPh" type="number" step="0.1" value="7.5"></div>
+    <div><b>Oxy hòa tan (mg/L)</b><br><input id="inDo" type="number" step="0.1" value="5.5"></div>
+    <div><b>Độ mặn (‰)</b><br><input id="inSal" type="number" step="0.1" value="12"></div>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <h4>Nhiệt độ</h4>
+    <div class="value" id="val-temp">-- °C</div>
+    <div class="muted">Ngưỡng: <span id="rng-temp">--</span> <span id="pill-temp" class="pill">—</span></div>
+  </div>
+  <div class="card">
+    <h4>pH</h4>
+    <div class="value" id="val-ph">--</div>
+    <div class="muted">Ngưỡng: <span id="rng-ph">--</span> <span id="pill-ph" class="pill">—</span></div>
+  </div>
+  <div class="card">
+    <h4>Oxy hòa tan (DO)</h4>
+    <div class="value" id="val-do">-- mg/L</div>
+    <div class="muted">Ngưỡng: <span id="rng-do">--</span> <span id="pill-do" class="pill">—</span></div>
+  </div>
+  <div class="card">
+    <h4>Độ mặn</h4>
+    <div class="value" id="val-sal">-- ‰</div>
+    <div class="muted">Ngưỡng: <span id="rng-sal">--</span> <span id="pill-sal" class="pill">—</span></div>
+  </div>
+</div>
+
+<div class="alert-box" id="alertBox"></div>
+
+<div style="padding:0 16px">
+  <canvas id="tempChart" height="160"></canvas>
+  <canvas id="phChart" height="160"></canvas>
+  <canvas id="doChart" height="160"></canvas>
+  <canvas id="salChart" height="160"></canvas>
+</div>
+
+<script>
+const thresholds = { temp:{low:24,high:32}, ph:{low:7.0,high:8.5}, do:{low:4.0,high:10.0}, sal:{low:0,high:25} };
+
+function refreshThresholdUI(){
+  document.getElementById("rng-temp").textContent = `${thresholds.temp.low}–${thresholds.temp.high} °C`;
+  document.getElementById("rng-ph").textContent   = `${thresholds.ph.low}–${thresholds.ph.high}`;
+  document.getElementById("rng-do").textContent   = `${thresholds.do.low}–${thresholds.do.high} mg/L`;
+  document.getElementById("rng-sal").textContent  = `${thresholds.sal.low}–${thresholds.sal.high} ‰`;
+}
+refreshThresholdUI();
+
+function makeChart(label){ 
+  return new Chart(document.getElementById(label), {
+    type:'line', 
+    data:{labels:[], datasets:[{label, data:[], borderWidth:2, tension:.3}]},
+    options:{responsive:true, animation:false}
+  });
+}
+const tempChart=makeChart('tempChart'), phChart=makeChart('phChart'), doChart=makeChart('doChart'), salChart=makeChart('salChart');
+
+function pushPoint(chart, y){
+  const now=new Date().toLocaleTimeString('vi-VN');
+  chart.data.labels.push(now); chart.data.datasets[0].data.push(y);
+  if(chart.data.labels.length>60){ chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+  chart.update();
+}
+
+function setPill(pill, state){
+  pill.className='pill '+(state==='ok'?'ok':'warn');
+  pill.textContent=state==='ok'?'OK':(state==='low'?'Thấp':'Cao');
+}
+
+function checkStatus(name, val, unit, chart){
+  document.getElementById('val-'+name).textContent = unit?`${val} ${unit}`:val;
+  const pill = document.getElementById('pill-'+name);
+  let state='ok';
+  if(val<thresholds[name].low) state='low';
+  if(val>thresholds[name].high) state='high';
+  setPill(pill, state);
+  pushPoint(chart, val);
+  return state;
+}
+
+function updateAll(){
+  const data = {
+    temp:+document.getElementById("inTemp").value,
+    ph:+document.getElementById("inPh").value,
+    do:+document.getElementById("inDo").value,
+    sal:+document.getElementById("inSal").value
+  };
+  const stT = checkStatus('temp', data.temp, '°C', tempChart);
+  const stP = checkStatus('ph',   data.ph, '',   phChart);
+  const stD = checkStatus('do',   data.do, 'mg/L', doChart);
+  const stS = checkStatus('sal',  data.sal, '‰',  salChart);
+  const alertBox = document.getElementById("alertBox");
+  alertBox.style.display = [stT,stP,stD,stS].some(s=>s!=='ok')?'block':'none';
+  if(alertBox.style.display==='block') alertBox.textContent='⚠️ Có thông số vượt ngưỡng!';
+}
+
+["inTemp","inPh","inDo","inSal"].forEach(id=>{
+  document.getElementById(id).addEventListener('input', updateAll);
+});
+
+updateAll();
+</script>
+
+</body>
+</html>
