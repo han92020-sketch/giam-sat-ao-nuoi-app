@@ -4,17 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Giám sát chỉ tiêu ao nuôi</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2563eb">
 <script>
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('service-worker.js').catch(console.error);
-    });
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log("Service Worker registered"));
   }
 </script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+
 <style>
 :root{
   --bg:#f4f6f9; --panel:#fff; --muted:#64748b;
@@ -22,7 +22,7 @@
 }
 *{box-sizing:border-box}
 body{margin:0; font-family:'Roboto',sans-serif; background:var(--bg); color:#0f172a}
-header{background:var(--panel); text-align:center; padding:14px; font-size:20px; font-weight:700;
+header{background:var(--panel); text-align:center; padding:10px; font-size:20px; font-weight:700;
        box-shadow:0 2px 5px rgba(0,0,0,.06)}
 .cards{display:flex; flex-wrap:wrap; gap:16px; padding:16px; justify-content:center}
 .card{background:var(--panel); padding:16px; border-radius:12px; text-align:center;
@@ -39,26 +39,11 @@ canvas{background:var(--panel); border-radius:10px; padding:8px; margin-bottom:1
        box-shadow:0 2px 5px rgba(0,0,0,.06)}
 .panel{background:var(--panel); margin:16px; padding:16px; border-radius:12px;
        box-shadow:0 2px 5px rgba(0,0,0,.06)}
-.grid{display:grid; gap:10px}
-.grid.cols-2{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
-input[type=number]{width:120px; padding:8px; border:1px solid #cbd5e1; border-radius:8px}
-button{background:var(--accent); color:#fff; padding:10px 14px; border:none; border-radius:8px;
-       font-weight:700; cursor:pointer}
 </style>
 </head>
 <body>
 
 <header>GIÁM SÁT CHỈ TIÊU AO NUÔI</header>
-
-<div class="panel">
-  <h3>Nhập giá trị đo</h3>
-  <div class="grid cols-2">
-    <div><b>Nhiệt độ (°C)</b><br><input id="inTemp" type="number" step="0.1" value="28"></div>
-    <div><b>pH</b><br><input id="inPh" type="number" step="0.1" value="7.5"></div>
-    <div><b>Oxy hòa tan (mg/L)</b><br><input id="inDo" type="number" step="0.1" value="5.5"></div>
-    <div><b>Độ mặn (‰)</b><br><input id="inSal" type="number" step="0.1" value="12"></div>
-  </div>
-</div>
 
 <div class="cards">
   <div class="card">
@@ -93,7 +78,7 @@ button{background:var(--accent); color:#fff; padding:10px 14px; border:none; bor
 </div>
 
 <script>
-const thresholds = { temp:{low:24,high:32}, ph:{low:7.0,high:8.5}, do:{low:4.0,high:10.0}, sal:{low:0,high:25} };
+const thresholds = { temp:{low:28,high:32}, ph:{low:7.0,high:8.5}, do:{low:4.0,high:10.0}, sal:{low:0,high:25} };
 
 function refreshThresholdUI(){
   document.getElementById("rng-temp").textContent = `${thresholds.temp.low}–${thresholds.temp.high} °C`;
@@ -135,13 +120,7 @@ function checkStatus(name, val, unit, chart){
   return state;
 }
 
-function updateAll(){
-  const data = {
-    temp:+document.getElementById("inTemp").value,
-    ph:+document.getElementById("inPh").value,
-    do:+document.getElementById("inDo").value,
-    sal:+document.getElementById("inSal").value
-  };
+function updateAll(data){
   const stT = checkStatus('temp', data.temp, '°C', tempChart);
   const stP = checkStatus('ph',   data.ph, '',   phChart);
   const stD = checkStatus('do',   data.do, 'mg/L', doChart);
@@ -151,11 +130,20 @@ function updateAll(){
   if(alertBox.style.display==='block') alertBox.textContent='⚠️ Có thông số vượt ngưỡng!';
 }
 
-["inTemp","inPh","inDo","inSal"].forEach(id=>{
-  document.getElementById(id).addEventListener('input', updateAll);
-});
+/* ---------------- Lấy dữ liệu từ file data.json ---------------- */
+async function fetchData(){
+  try{
+    const res = await fetch("data.json?_=" + Date.now()); // tránh cache
+    const data = await res.json();
+    updateAll(data);
+  }catch(err){
+    console.error("Lỗi đọc data.json:", err);
+  }
+}
 
-updateAll();
+// chạy ngay và lặp lại mỗi 5 giây
+fetchData();
+setInterval(fetchData, 5000);
 </script>
 
 </body>
